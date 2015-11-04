@@ -1,8 +1,7 @@
 
 import Chisel._
 
-class SdramTest (
-) extends Module {
+class SdramTest () extends Module {
 
   val io = new Bundle {
     val uart = new Bundle {
@@ -24,12 +23,12 @@ class SdramTest (
     };
   }
 
-  val uartCtl = BufferedUart(
+  val uartCtl = Module(new BufferedUart(
     wtime = 0x1ADB,
-    entries = 1024)
+    entries = 1024))
 
-  io.uart.tx    := uartCtl.io.tx
-  uartCtl.io.rx := io.uart.rx
+  io.uart.tx     := uartCtl.io.txd
+  uartCtl.io.rxd := io.uart.rx
 
   val sdramCtl = Module(new SdramController(
     frequency = 143,
@@ -63,16 +62,15 @@ class SdramTest (
   val readbuf = Vec.fill(8) {UInt(0, width = 16)}
 
   // default values
-  uartCtl.enq.valid := Bool(false)
-  uartCtl.enq.bits  := UInt(0)
-  uartCtl.deq.ready := Bool(false)
+  uartCtl.io.enq.valid := Bool(false)
+  uartCtl.io.enq.bits  := UInt(0)
+  uartCtl.io.deq.ready := Bool(false)
 
-  sdramCtl.wdata.valid   := Bool(false)
-  sdramCtl.wdata.bits    := state_counter(15, 0)
-  sdramCtl.rdata.ready   := Bool(false)
-  sdramCtl.cmd.valid     := Bool(false)
-  sdramCtl.cmd.bits.we   := Bool(true)
-  sdramCtl.cmd.bits.addr := state_counter(25, 4)
+  sdramCtl.io.wdata.valid   := Bool(false)
+  sdramCtl.io.wdata.bits    := state_counter(15, 0)
+  sdramCtl.io.cmd.valid     := Bool(false)
+  sdramCtl.io.cmd.bits.we   := Bool(true)
+  sdramCtl.io.cmd.bits.addr := state_counter(25, 4)
 
   // logic
   when (state_counter === UInt(1 << 22)) {
@@ -95,17 +93,17 @@ class SdramTest (
             when (sdramCtl.io.cmd.ready) {
 	      write_state          := write_writing
               burst_counter        := UInt(0)
-              sdramCtl.cmd.valid   := Bool(true)
-              sdramCtl.cmd.bits.we := Bool(true)
+              sdramCtl.io.cmd.valid   := Bool(true)
+              sdramCtl.io.cmd.bits.we := Bool(true)
             }
           }
 
           is (write_writing) {
-            sdramCtl.wdata.valid := Bool(true)
+            sdramCtl.io.wdata.valid := Bool(true)
             state_counter        := state_counter + UInt(1)
             burst_counter        := burst_counter + UInt(1)
 
-            when (write_counter === 7) {
+            when (burst_counter === UInt(7)) {
               write_state := write_idle
             }
           }
@@ -118,37 +116,49 @@ class SdramTest (
             when (sdramCtl.io.cmd.ready) {
               read_state           := read_reading
               burst_counter        := UInt(0)
-              sdramCtl.cmd.valid   := Bool(true)
-              sdramCtl.cmd.bits.we := Bool(false)
+              sdramCtl.io.cmd.valid   := Bool(true)
+              sdramCtl.io.cmd.bits.we := Bool(false)
             }
           }
 
           is (read_reading) {
-            sdramCtl.io.rdata.ready := Bool(true)
-
-            when (write_counter === 8) {
+            when (burst_counter === UInt(8)) {
               write_state   := read_emit
               burst_counter := UInt(0)
+
             } .elsewhen (sdramCtl.io.rdata.valid) {
               state_counter := state_counter + UInt(1)
-              burst_counter := burst_counetr + UInt(1)
+              burst_counter := burst_counter + UInt(1)
               readbuf(burst_counter) := sdramCtl.io.rdata.bits
             }
           }
 
           is (read_emit) {
-            when (burst_couneter === UInt(8)) {
+            when (burst_counter === UInt(8)) {
               read_state    := read_idle
               burst_counter := UInt(0)
 
             } .elsewhen (uartCtl.io.enq.ready) {
               uartCtl.io.enq.valid := Bool(true)
               uartCtl.io.enq.bits  := readbuf(burst_counter)
-              burst_couneter       := burst_counter + UInt(1);
+              burst_counter        := burst_counter + UInt(1);
             }
           }
         }
       }
     }
+  }
+}
+
+object SdramTest {
+
+  def main(args: Array[String]): Unit = {
+    chiselMainTest(args, () => Module(new SdramTest)) { c =>
+      new SdramTestTest(c)
+    }
+  }
+
+  class SdramTestTest(c: SdramTest) extends Tester(c, isTrace = false) {
+    poke(c.io.sdram.dqi, 1)
   }
 }
