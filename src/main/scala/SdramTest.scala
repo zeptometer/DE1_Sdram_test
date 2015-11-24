@@ -1,51 +1,14 @@
 
 import Chisel._
 
-class SdramTest () extends Module {
+class SdramTest (
+  val validWidth: Int
+) extends Module {
 
   val io = new Bundle {
-    val uart = new Bundle {
-      val rx = Bool(INPUT)
-      val tx = Bool(OUTPUT)
-    }
-    val sdram = new Bundle {
-      val a    = Bits(OUTPUT, 13)
-      val ba   = Bits(OUTPUT, 2)
-      val xcas = Bool(OUTPUT)
-      val cke  = Bool(OUTPUT)
-      val xcs  = Bool(OUTPUT)
-      val dqml = Bool(OUTPUT)
-      val dqmh = Bool(OUTPUT)
-      val dqi  = Bits(INPUT, 16)
-      val dqo  = Bits(OUTPUT, 16)
-      val xras = Bool(OUTPUT)
-      val xwe  = Bool(OUTPUT)
-    };
+    val uart  = new UartIO
+    val sdram = new SdramIO
   }
-
-  val uartCtl = Module(new BufferedUart(
-    wtime = 0x1ADB,
-    entries = 1024))
-
-  io.uart.tx     := uartCtl.io.txd
-  uartCtl.io.rxd := io.uart.rx
-
-  val sdramCtl = Module(new SdramController(
-    frequency = 143,
-    casLatency = 3,
-    burstLength = 8,
-    interleaved = true,
-    tPowerUp = 100,
-    tREF = 64,
-    tRCD = 15,
-    tRAS = 37,
-    tDPL = 14,
-    tRP  = 15,
-    tRC  = 60,
-    tMRD = 14
-  ))
-
-  io.sdram <> sdramCtl.io.sdram
 
   val writing :: reading :: Nil = Enum(UInt(), 2)
   val state = RegInit(writing)
@@ -62,18 +25,18 @@ class SdramTest () extends Module {
   val readbuf = Vec.fill(8) {UInt(0, width = 16)}
 
   // default values
-  uartCtl.io.enq.valid := Bool(false)
-  uartCtl.io.enq.bits  := UInt(0)
-  uartCtl.io.deq.ready := Bool(false)
+  io.uart.enq.valid := Bool(false)
+  io.uart.enq.bits  := UInt(0)
+  io.uart.deq.ready := Bool(false)
 
-  sdramCtl.io.wdata.valid   := Bool(false)
-  sdramCtl.io.wdata.bits    := state_counter(15, 0)
-  sdramCtl.io.cmd.valid     := Bool(false)
-  sdramCtl.io.cmd.bits.we   := Bool(true)
-  sdramCtl.io.cmd.bits.addr := state_counter(25, 4)
+  io.sdram.wdata.valid   := Bool(false)
+  io.sdram.wdata.bits    := state_counter(15, 0)
+  io.sdram.cmd.valid     := Bool(false)
+  io.sdram.cmd.bits.we   := Bool(true)
+  io.sdram.cmd.bits.addr := state_counter(25, 4)
 
   // logic
-  when (state_counter === UInt(1 << 22)) {
+  when (state_counter === UInt(1 << validwidth)) {
     switch (state) {
       is (writing) {state := reading}
       is (reading) {state := writing}
@@ -90,16 +53,16 @@ class SdramTest () extends Module {
       is (writing) {
         switch (write_state) {
           is (write_idle) {
-            when (sdramCtl.io.cmd.ready) {
+            when (io.sdram.cmd.ready) {
 	      write_state          := write_writing
               burst_counter        := UInt(0)
-              sdramCtl.io.cmd.valid   := Bool(true)
-              sdramCtl.io.cmd.bits.we := Bool(true)
+              io.sdram.cmd.valid   := Bool(true)
+              io.sdram.cmd.bits.we := Bool(true)
             }
           }
 
           is (write_writing) {
-            sdramCtl.io.wdata.valid := Bool(true)
+            io.sdram.wdata.valid := Bool(true)
             state_counter        := state_counter + UInt(1)
             burst_counter        := burst_counter + UInt(1)
 
@@ -113,11 +76,11 @@ class SdramTest () extends Module {
       is (reading) {
         switch (read_state) {
           is (read_idle) {
-            when (sdramCtl.io.cmd.ready) {
+            when (io.sdram.cmd.ready) {
               read_state           := read_reading
               burst_counter        := UInt(0)
-              sdramCtl.io.cmd.valid   := Bool(true)
-              sdramCtl.io.cmd.bits.we := Bool(false)
+              io.sdram.cmd.valid   := Bool(true)
+              io.sdram.cmd.bits.we := Bool(false)
             }
           }
 
@@ -126,10 +89,10 @@ class SdramTest () extends Module {
               write_state   := read_emit
               burst_counter := UInt(0)
 
-            } .elsewhen (sdramCtl.io.rdata.valid) {
+            } .elsewhen (io.sdram.rdata.valid) {
               state_counter := state_counter + UInt(1)
               burst_counter := burst_counter + UInt(1)
-              readbuf(burst_counter) := sdramCtl.io.rdata.bits
+              readbuf(burst_counter) := io.sdram.rdata.bits
             }
           }
 
@@ -138,9 +101,9 @@ class SdramTest () extends Module {
               read_state    := read_idle
               burst_counter := UInt(0)
 
-            } .elsewhen (uartCtl.io.enq.ready) {
-              uartCtl.io.enq.valid := Bool(true)
-              uartCtl.io.enq.bits  := readbuf(burst_counter)
+            } .elsewhen (io.uart.enq.ready) {
+              io.uart.enq.valid := Bool(true)
+              io.uart.enq.bits  := readbuf(burst_counter)
               burst_counter        := burst_counter + UInt(1);
             }
           }
@@ -148,6 +111,50 @@ class SdramTest () extends Module {
       }
     }
   }
+}
+
+class ActualSdramTest() extends Module {
+
+  val io = new Bundle {
+    val sdramRaw = new SdramRawIO
+    val uartRaw  = new UartRawIO
+  }
+
+  val sdram = Module(new Sdram(
+    frequency = 143,
+    casLatency = 3,
+    burstLength = 8,
+    interleaved = true,
+    tPowerUp = 100,
+    tREF = 64,
+    tRCD = 15,
+    tRAS = 37,
+    tDPL = 14,
+    tRP  = 15,
+    tRC  = 60,
+    tMRD = 14
+  ))
+  val uart = Module(new BufferedUart(0x1adb, 1024))
+  val test = Module(new SdramTest(validWidth = 22))
+
+  test.io.uart     <> uart.io.ctl
+  test.io.sdram    <> sdram.io.ctl
+  test.io.uartRaw  <> uart.io.raw
+  test.io.sdramRaw <> sdram.io.raw
+}
+
+class DummySdramTest() extends Module {
+
+  val io = new Bundle()
+
+  val sdram = Module(new DummySdram(validWidth = 16,
+                                    burstLength = 16,
+                                    casLatency = 3))
+  val uart = Module(new DummyUart())
+  val test = Module(new SdramTest(validWidth = 16))
+
+  test.io.uart  <> uart.io
+  test.io.sdram <> sdram.io
 }
 
 object SdramTest {
