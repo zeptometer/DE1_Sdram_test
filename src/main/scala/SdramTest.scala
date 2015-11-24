@@ -137,10 +137,10 @@ class ActualSdramTest() extends Module {
   val uart = Module(new BufferedUart(0x1adb, 1024))
   val test = Module(new SdramTest(validWidth = 22))
 
-  test.io.uart     <> uart.io.ctl
-  test.io.sdram    <> sdram.io.ctl
-  test.io.uartRaw  <> uart.io.raw
-  test.io.sdramRaw <> sdram.io.raw
+  test.io.uart  <> uart.io.ctl
+  test.io.sdram <> sdram.io.ctl
+  io.uartRaw  <> uart.io.raw
+  io.sdramRaw <> sdram.io.raw
 }
 
 class DummySdramTest() extends Module {
