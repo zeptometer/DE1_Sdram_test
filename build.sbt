@@ -1,9 +1,10 @@
-name := "chisel-uart"
+name := "sdramtest"
 version := "0.1.0"
 scalaVersion := "2.11.7"
 
-lazy val chiselUart  = uri("https://github.com/wasabiz/chisel-uart.git")
-lazy val chiselSdram = uri("https://github.com/zeptometer/chisel-DE1-SDRAM.git")
-lazy val root = project.in(file(".")).dependsOn(chiselUart).dependsOn(chiselSdram)
+lazy val root = project.in(file(".")).dependsOn(chiselUart, chiselSdram)
+
+lazy val chiselUart  = uri("git://github.com/wasabiz/chisel-uart.git")
+lazy val chiselSdram = uri("git://github.com/zeptometer/chisel-DE1-SDRAM.git")
 
 libraryDependencies += "edu.berkeley.cs" %% "chisel" % "latest.release"
