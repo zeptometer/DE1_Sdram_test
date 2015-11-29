@@ -1,4 +1,3 @@
-
 import Chisel._
 
 class SdramTest (
@@ -36,7 +35,7 @@ class SdramTest (
   io.sdram.cmd.bits.addr := state_counter(25, 4)
 
   // logic
-  when (state_counter === UInt(1 << validwidth)) {
+  when (state_counter === UInt(1 << validWidth)) {
     switch (state) {
       is (writing) {state := reading}
       is (reading) {state := writing}
@@ -116,8 +115,8 @@ class SdramTest (
 class ActualSdramTest() extends Module {
 
   val io = new Bundle {
-    val sdramRaw = new SdramRawIO
-    val uartRaw  = new UartRawIO
+    val sdram = new SdramPeripheral
+    val uart  = new UartPeripheral
   }
 
   val sdram = Module(new Sdram(
@@ -139,18 +138,17 @@ class ActualSdramTest() extends Module {
 
   test.io.uart  <> uart.io.ctl
   test.io.sdram <> sdram.io.ctl
-  io.uartRaw  <> uart.io.raw
-  io.sdramRaw <> sdram.io.raw
+  io.uart  <> uart.io.pins
+  io.sdram <> sdram.io.pins
 }
 
 class DummySdramTest() extends Module {
-
   val io = new Bundle()
 
   val sdram = Module(new DummySdram(validWidth = 16,
                                     burstLength = 16,
                                     casLatency = 3))
-  val uart = Module(new DummyUart())
+  val uart = Module(new DummyUart(Array()))
   val test = Module(new SdramTest(validWidth = 16))
 
   test.io.uart  <> uart.io
@@ -160,12 +158,20 @@ class DummySdramTest() extends Module {
 object SdramTest {
 
   def main(args: Array[String]): Unit = {
-    chiselMainTest(args, () => Module(new SdramTest)) { c =>
-      new SdramTestTest(c)
+    chiselMainTest(args, () => Module(new ActualSdramTest)) { c =>
+      new ActualSdramTestTest(c)
+    }
+
+    chiselMainTest(args, () => Module(new DummySdramTest)) { c =>
+      new DummySdramTestTest(c)
     }
   }
 
-  class SdramTestTest(c: SdramTest) extends Tester(c, isTrace = false) {
+  class ActualSdramTestTest(c: ActualSdramTest) extends Tester(c, isTrace = false) {
     poke(c.io.sdram.dqi, 1)
+  }
+
+  class DummySdramTestTest(c: DummySdramTest) extends Tester(c) {
+    step(1 << 16)
   }
 }
