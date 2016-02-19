@@ -1,4 +1,7 @@
 import Chisel._
+import aqua.uart._
+import aqua.sdram._
+import aqua.dummysdram._
 
 class SdramTest (
   val validWidth: Int
@@ -190,11 +193,11 @@ object SdramTest {
   }
 
   class DummySdramTestTest(c: DummySdramTest) extends Tester(c, isTrace = false) {
-    for (i <- 0 until 1 << c.validWidth) {
+    for (i <- 0 until 1 << (c.validWidth + 1)) {
       while (peek(c.io.valid) == 0) {
         step(1)
       }
-      expect(c.io.bits, (i & 255) ^ (i >> 8))
+      expect(c.io.bits, (i & 255) ^ ((i >> 8) & 255))
       step(1)
     }
   }
