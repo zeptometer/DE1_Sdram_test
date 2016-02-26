@@ -1,7 +1,7 @@
 import Chisel._
 import aqua.uart._
-import aqua.sdram._
-import aqua.dummysdram._
+import aqua.sdram.sync._
+import aqua.sdram.dummysync._
 
 class SdramTest (
   val validWidth: Int
@@ -159,7 +159,26 @@ class ActualSdramTest() extends Module {
   io.sdram <> sdram.io.pins
 }
 
-class DummySdramTest(val validWidth: Int = 10) extends Module {
+class DummySdramTestSyn (
+  val validWidth: Int = 10,
+  val freq: Int = 266000000,
+  val uartfreq: Int = 9600
+) extends Module {
+  val io = new UartPeripheral
+
+  val wtime = freq / uartfreq
+  val uart = Module(new BufferedUart(wtime, 1024))
+  val sdram = Module(new DummySdram(validWidth = validWidth,
+    burstLength = 8,
+    casLatency = 3))
+  val test = Module(new SdramTest(validWidth = validWidth))
+
+  test.io.uart  <> uart.io.ctl
+  test.io.sdram <> sdram.io
+  io  <> uart.io.pins
+}
+
+class DummySdramTestSim(val validWidth: Int = 10) extends Module {
   val io = Valid(UInt(width = 8))
 
   val sdram = Module(new DummySdram(validWidth = validWidth,
@@ -179,20 +198,16 @@ class DummySdramTest(val validWidth: Int = 10) extends Module {
 object SdramTest {
 
   def main(args: Array[String]): Unit = {
-    chiselMainTest(args, () => Module(new ActualSdramTest)) { c =>
-      new ActualSdramTestTest(c)
-    }
+    chiselMain(args, () => Module(new ActualSdramTest))
 
-    chiselMainTest(args, () => Module(new DummySdramTest(16))) { c =>
+    chiselMain(args, () => Module(new DummySdramTestSyn))
+
+    chiselMainTest(args, () => Module(new DummySdramTestSim(16))) { c =>
       new DummySdramTestTest(c)
     }
   }
 
-  class ActualSdramTestTest(c: ActualSdramTest) extends Tester(c, isTrace = false) {
-    poke(c.io.sdram.dqi, 1)
-  }
-
-  class DummySdramTestTest(c: DummySdramTest) extends Tester(c, isTrace = false) {
+  class DummySdramTestTest(c: DummySdramTestSim) extends Tester(c, isTrace = false) {
     for (i <- 0 until 1 << (c.validWidth + 1)) {
       while (peek(c.io.valid) == 0) {
         step(1)
